@@ -6,7 +6,8 @@ import numpy as np
 st.set_page_config(page_title="Reusable Oil Detector", layout="centered")
 
 st.title("🛢️ Reusable Oil Detector")
-st.markdown("Upload an image and choose a model to check oil qualiimport streamlit as st
+st.markdown("Upload an image and choose a model to check oil quality.")
+
 import onnxruntime as ort
 import numpy as np
 from PIL import Image
