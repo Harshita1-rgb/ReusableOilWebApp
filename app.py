@@ -64,10 +64,14 @@ if uploaded_file is not None:
     detections = outputs[0]  # shape: (1, num_boxes, 6)
     boxes = detections[0]    # remove batch dimension
 
+    # 🔍 DEBUG: Show raw predictions
+    st.write("📦 Raw ONNX Output:", boxes)
+
     detected = False
-    for pred in boxes:
+    for i, pred in enumerate(boxes):
+        st.write(f"📦 Box {i}: {pred.tolist()}")  # Debug individual box
         confidence = pred[4]
-        if confidence > 0.3:
+        if confidence > 0.05:  # Lowered for debug purposes
             class_id = int(pred[5])
             if class_id < len(labels):
                 label = labels[class_id]
