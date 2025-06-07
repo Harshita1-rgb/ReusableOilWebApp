@@ -1,64 +1,65 @@
 import streamlit as st
-from ultralytics import YOLO
-import torch
+import onnxruntime as ort
 from PIL import Image
-import requests
-import os
+import numpy as np
 
-# Function to download model weights from Google Drive
-def download_file_from_google_drive(id, destination):
-    if not os.path.exists(destination):
-        url = f"https://drive.google.com/uc?id={id}"
-        response = requests.get(url, allow_redirects=True)
-        with open(destination, 'wb') as f:
-            f.write(response.content)
-
-# Download both models from Google Drive
-download_file_from_google_drive("1110aAQtjWpViRoSOI2B9s6eS7uFCaz7M", "clean_reusable_model.pt")
-download_file_from_google_drive("1zLG_0gNfV59YxEyovad0aU79rTnYylby", "reusable_vs_nonreusable.pt")
-
-# Load both models using YOLOv8
-@st.cache_resource
-def load_model(path):
-    return YOLO(path)
-
-model1 = load_model("reusable_vs_nonreusable.pt")
-model2 = load_model("clean_reusable_model.pt")
-
-# Inference explanation logic
-def get_explanation(label, confidence):
-    confidence_pct = round(confidence * 100, 2)
-
-    if label == "nonreusable":
-        return f"🟥 Nonreusable detected with {confidence_pct}% confidence. This may be due to:\n- Dark brown/black oil color\n- Floating food particles\n- Cloudy or sticky texture\n- Irregular reflections or dirty vessel."
-    elif label == "reusable":
-        return f"🟩 Reusable detected with {confidence_pct}% confidence. Indicators include:\n- Clear golden oil\n- No visible food particles\n- Clean container and fresh look."
-    else:
-        return "⚠️ No reusable oil detected in the image."
-
-# Streamlit UI
+# Title
 st.title("🛢️ Reusable Oil Detector")
 st.write("Upload an image and choose a model to check oil quality.")
 
-uploaded_image = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
-model_choice = st.selectbox("Choose Model", ["Model 1 - Reusable vs Non-reusable", "Model 2 - Clean Reusable Only"])
+# Load model with caching
+@st.cache_resource
+def load_model(path):
+    return ort.InferenceSession(path)
 
-if uploaded_image is not None:
-    st.image(uploaded_image, caption="Uploaded Image", use_container_width=True)
+# Preprocess image
+def preprocess(img):
+    img = img.resize((640, 640)).convert('RGB')
+    img = np.array(img).transpose(2, 0, 1)  # HWC to CHW
+    img = img / 255.0
+    img = np.expand_dims(img, axis=0).astype(np.float32)
+    return img
 
-    # Choose model based on selection
-    model = model1 if "vs Non" in model_choice else model2
+# Postprocess predictions
+def postprocess(outputs, model_type):
+    predictions = outputs[0]
+    if predictions.shape[1] == 6:  # reusable vs nonreusable
+        cls_map = {0: "reusable", 1: "nonreusable"}
+    else:  # clean reusable only
+        cls_map = {0: "reusable"}
+    
+    results = []
+    for pred in predictions[0]:
+        conf = pred[4]
+        cls_id = int(pred[5])
+        if conf > 0.2:
+            results.append((cls_map.get(cls_id, "unknown"), float(conf)))
+    return results
 
-    # Predict
-    image = Image.open(uploaded_image).convert("RGB")
-    results = model.predict(image)
+# Upload image
+uploaded_image = st.file_uploader("Upload an image", type=["jpg", "png", "jpeg"])
 
-    boxes = results[0].boxes
-    if boxes is not None and len(boxes) > 0:
-        cls_id = int(boxes.cls[0].item())
-        conf = boxes.conf[0].item()
-        label = model.names[cls_id]
-        explanation = get_explanation(label, conf)
-        st.markdown(f"### {explanation}")
+# Choose model
+model_choice = st.radio("Choose Model", ["Model 1 - Reusable vs Non-reusable", "Model 2 - Clean Reusable Only"])
+
+# Run inference
+if uploaded_image:
+    image = Image.open(uploaded_image)
+    st.image(image, caption="Uploaded Image", use_container_width=True)
+    
+    img_input = preprocess(image)
+    
+    if model_choice == "Model 1 - Reusable vs Non-reusable":
+        model_path = "reusable_vs_nonreusable.onnx"
+    else:
+        model_path = "clean_reusable_model.onnx"
+    
+    model = load_model(model_path)
+    outputs = model.run(None, {"images": img_input})
+    results = postprocess(outputs, model_choice)
+
+    if results:
+        for label, conf in results:
+            st.success(f"🟩 {label.capitalize()} detected with {conf*100:.2f}% confidence")
     else:
         st.warning("⚠️ No reusable oil detected in the image.")
