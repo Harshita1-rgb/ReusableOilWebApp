@@ -61,17 +61,13 @@ if uploaded_file is not None:
     input_name = model.get_inputs()[0].name
     outputs = model.run(None, {input_name: input_tensor})
 
-    detections = outputs[0]  # shape: (1, num_boxes, 6)
-    boxes = detections[0]    # remove batch dimension
-
-    # 🔍 DEBUG: Show raw predictions
-    st.write("📦 Raw ONNX Output:", boxes)
+    detections = outputs[0]
+    boxes = detections[0]  # shape: (num_detections, 6)
 
     detected = False
-    for i, pred in enumerate(boxes):
-        st.write(f"📦 Box {i}: {pred.tolist()}")  # Debug individual box
+    for pred in boxes:
         confidence = pred[4]
-        if confidence > 0.05:  # Lowered for debug purposes
+        if confidence > 0.3:
             class_id = int(pred[5])
             if class_id < len(labels):
                 label = labels[class_id]
