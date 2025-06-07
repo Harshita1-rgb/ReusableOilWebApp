@@ -2,21 +2,42 @@ import streamlit as st
 import onnxruntime as ort
 from PIL import Image
 import numpy as np
+import gdown
+import os
 
 st.set_page_config(page_title="Reusable Oil Detector", layout="centered")
 st.title("🛢️ Reusable Oil Detector")
 st.markdown("Upload an image and choose a model to check oil quality.")
 
-# Upload and select model
+# Upload and model selection
 uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 model_choice = st.selectbox("Choose Model", ["Model 1 - Reusable vs Non-reusable", "Model 2 - Clean Reusable Only"])
+
+# Model download links
+model_paths = {
+    "Model 1 - Reusable vs Non-reusable": {
+        "url": "https://drive.google.com/uc?id=1z-ZV_1qb3xvDVAmfCYI7lo6d4zvWpS9H",
+        "local": "reusable_vs_nonreusable.onnx"
+    },
+    "Model 2 - Clean Reusable Only": {
+        "url": "https://drive.google.com/uc?id=1eJcur4VdeHCMC4VgaEnqFsqK6fIiiT1i",
+        "local": "clean_reusable_model.onnx"
+    }
+}
+
+# Download model if not present
+model_info = model_paths[model_choice]
+if not os.path.exists(model_info["local"]):
+    with st.spinner("📥 Downloading ONNX model..."):
+        gdown.download(model_info["url"], model_info["local"], quiet=False)
+model_path = model_info["local"]
 
 # Load ONNX model
 @st.cache_resource
 def load_model(path):
     return ort.InferenceSession(path)
 
-# Preprocessing
+# Image preprocessing
 def preprocess_image(image):
     img = image.resize((640, 640)).convert("RGB")
     img_array = np.array(img).astype(np.float32) / 255.0
@@ -29,12 +50,10 @@ if uploaded_file is not None:
     st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
     image = Image.open(uploaded_file).convert("RGB")
 
-    # Model selection and label mapping
+    # Set class labels
     if model_choice == "Model 1 - Reusable vs Non-reusable":
-        model_path = "reusable_vs_nonreusable.onnx"
         labels = ["reusable", "nonreusable"]
     else:
-        model_path = "clean_reusable_model.onnx"
         labels = ["reusable"]
 
     model = load_model(model_path)
@@ -43,7 +62,7 @@ if uploaded_file is not None:
     outputs = model.run(None, {input_name: input_tensor})
 
     detections = outputs[0]  # shape: (1, num_boxes, 6)
-    boxes = detections[0]    # remove batch dim
+    boxes = detections[0]    # remove batch dimension
 
     detected = False
     for pred in boxes:
@@ -55,7 +74,7 @@ if uploaded_file is not None:
                 conf_pct = confidence * 100
                 st.success(f"🟩 {label.capitalize()} detected with {conf_pct:.2f}% confidence")
 
-                # Human explanation
+                # Human explanation section
                 st.markdown("### 🔎 Why this prediction?")
                 if label == "reusable":
                     st.markdown("""
